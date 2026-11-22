@@ -249,7 +249,7 @@ const firebaseConfig = {
       try {
         const aiSdk=await import(`https://www.gstatic.com/firebasejs/${version}/firebase-ai.js`);
         const ai=aiSdk.getAI(firebaseApp,{backend:new aiSdk.GoogleAIBackend()});
-        aiModel=aiSdk.getGenerativeModel(ai,{model:'gemini-2.5-flash',systemInstruction:AI_SYSTEM_INSTRUCTION});
+        aiModel=aiSdk.getGenerativeModel(ai,{model:'gemini-3.8-flash',systemInstruction:AI_SYSTEM_INSTRUCTION});
       } catch(error) { aiInitError=error; }
       firebaseAuth=authSdk.getAuth(firebaseApp);
       firestoreSdk=firestore;
