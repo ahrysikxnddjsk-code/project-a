@@ -167,6 +167,26 @@ const firebaseConfig = {
     return `AI 小幫手目前無法回答，請稍後再試。\n診斷資訊：${diagnostic||'unknown error'}`;
   }
 
+  function isAiHighDemandError(error) {
+    const status=Number(error?.status??error?.customData?.status??error?.customData?.response?.status??error?.cause?.status);
+    const details=[error?.code,error?.message,error?.customData?.message].filter(Boolean).join(' ');
+    return status===500||status===503||/\b(?:500|503)\b|high\s+demand/i.test(details);
+  }
+
+  async function sendAiMessageWithRetry(createChat,prompt,isCurrentRequest) {
+    let retries=0;
+    while(true) {
+      try { return {result:await createChat().sendMessage(prompt)}; }
+      catch(error) {
+        if(!isAiHighDemandError(error)) return {error};
+        if(retries>=2) return {error,retriesExhausted:true};
+        retries++;
+        await new Promise(resolve=>setTimeout(resolve,2000));
+        if(!isCurrentRequest()) return null;
+      }
+    }
+  }
+
   async function sendAiPrompt(rawQuestion) {
     const question=String(rawQuestion||'').trim();
     if(!question||aiThinking)return;
@@ -179,8 +199,11 @@ const firebaseConfig = {
     aiMessages.push(userMessage); persistAiMessages(); $('aiInput').value=''; aiThinking=true; renderAiMessages(); updateAiControls();
     try {
       if(!aiModel) throw aiInitError||new Error('Firebase AI Logic 尚未初始化，請確認 Firebase AI Logic 已啟用。');
-      const chat=aiModel.startChat({history});
-      const result=await chat.sendMessage(buildAiPrompt(question));
+      const outcome=await sendAiMessageWithRetry(()=>aiModel.startChat({history}),buildAiPrompt(question),()=>requestToken===aiRequestToken&&requestUid===activeUserId&&requestUid===aiUserId);
+      if(!outcome)return;
+      if(outcome.retriesExhausted) { const error=new Error('AI high demand retry limit reached'); error.aiBusy=true; throw error; }
+      if(outcome.error) throw outcome.error;
+      const result=outcome.result;
       const answer=result.response.text().trim();
       if(!answer) throw new Error('模型沒有傳回可顯示的文字。');
       if(requestToken!==aiRequestToken||requestUid!==activeUserId||requestUid!==aiUserId)return;
@@ -189,7 +212,7 @@ const firebaseConfig = {
       persistAiMessages();
     } catch(error) {
       if(requestToken!==aiRequestToken||requestUid!==activeUserId||requestUid!==aiUserId)return;
-      aiMessages.push({role:'model',text:aiErrorMessage(error),error:true,createdAt:Date.now()});
+      aiMessages.push({role:'model',text:error?.aiBusy?'目前 AI 伺服器較忙碌，請稍候幾秒再試一次':aiErrorMessage(error),error:true,createdAt:Date.now()});
       persistAiMessages();
     } finally {
       if(requestToken===aiRequestToken){aiThinking=false;renderAiMessages();updateAiControls();}
