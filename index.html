@@ -65,6 +65,27 @@
       <div class="dialog-actions"><button class="secondary-btn close-dialog" type="button">取消</button><button class="primary-btn" type="submit">儲存安排</button></div>
     </form>
   </dialog>
+  <button class="ai-launcher" id="aiLauncher" type="button" aria-controls="aiPanel" aria-expanded="false"><span aria-hidden="true">✦</span> AI 行程小幫手</button>
+  <section class="ai-panel" id="aiPanel" aria-label="AI 行程小幫手" hidden>
+    <header class="ai-panel-header">
+      <div class="ai-heading"><span class="ai-mark" aria-hidden="true">✦</span><div><h2>AI 行程小幫手</h2><p>依照你的行程回答問題</p></div></div>
+      <div class="ai-header-actions"><button class="ai-header-btn" id="aiClearBtn" type="button" title="清除對話">清除對話</button><button class="ai-close-btn" id="aiCloseBtn" type="button" aria-label="關閉小幫手">×</button></div>
+    </header>
+    <div class="ai-login-notice" id="aiLoginNotice" hidden>請先登入 Google 帳號，再使用 AI 行程小幫手。</div>
+    <div class="ai-login-notice ai-data-notice" id="aiDataNotice" hidden></div>
+    <div class="ai-messages" id="aiMessages" aria-live="polite" aria-relevant="additions text"></div>
+    <div class="ai-quick-prompts" id="aiQuickPrompts" aria-label="快捷提問">
+      <button type="button" data-prompt="今天有哪些行程？">今天有哪些行程？</button>
+      <button type="button" data-prompt="這週還有什麼待辦？">這週還有什麼待辦？</button>
+      <button type="button" data-prompt="我這週哪天比較空？">我這週哪天比較空？</button>
+    </div>
+    <form class="ai-composer" id="aiForm">
+      <label class="sr-only" for="aiInput">輸入你的行程問題</label>
+      <input id="aiInput" type="text" maxlength="600" autocomplete="off" placeholder="問問你的行程…" disabled>
+      <button id="aiSendBtn" type="submit" aria-label="送出問題" disabled>➤</button>
+    </form>
+    <p class="ai-privacy">提問時，輸入內容與相關行程會傳送至 Google Gemini 產生回答；助理僅讀取行程，不會主動新增、修改或刪除資料。對話記錄僅保存在此瀏覽器並依登入帳號分開，不會同步至其他裝置。</p>
+  </section>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
