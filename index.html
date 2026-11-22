@@ -25,7 +25,7 @@
     <main class="main-content">
       <section class="welcome-row">
         <div><p class="eyebrow">PERSONAL PLANNER</p><h1>把每一天，安排得剛剛好。</h1><p class="welcome-copy">掌握接下來的行程，從容完成每一件重要的小事。</p></div>
-        <button class="primary-btn" id="addEventBtn" type="button"><span class="plus">＋</span>新增行程</button>
+        <button class="primary-btn" id="addEventBtn" type="button" disabled><span class="plus">＋</span>新增行程</button>
       </section>
 
       <section class="stats-grid" aria-label="行程統計">
@@ -38,10 +38,13 @@
       <section class="planner-panel">
         <div class="panel-heading"><div><p class="eyebrow">YOUR SCHEDULE</p><h2>行程與任務</h2></div><span class="result-count" id="resultCount">0 筆安排</span></div>
         <div class="toolbar"><label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.2 4.2"/></svg><input type="search" id="searchInput" placeholder="搜尋行程、地點或備註…" aria-label="搜尋行程"></label><div class="filter-wrap"><span class="filter-label">分類</span><div class="filter-list" id="filterList" role="group" aria-label="依分類篩選"></div></div></div>
+        <div class="cloud-state" id="cloudPrompt"><span class="cloud-state-icon">☁</span><strong>請先登入 Google 帳號以同步與管理你的雲端行程</strong><p>登入後即可在此查看與管理你的行程和任務。</p></div>
+        <div class="cloud-state" id="cloudLoading" hidden><span class="cloud-spinner" aria-hidden="true"></span><strong>正在同步雲端行程…</strong></div>
+        <div class="cloud-state cloud-error" id="cloudError" hidden><strong>無法載入雲端行程</strong><p id="cloudErrorMessage"></p></div>
         <div class="schedule-list" id="scheduleList"></div>
         <div class="empty-state" id="emptyState" hidden><span class="empty-icon">⌕</span><strong>沒有找到符合的安排</strong><p>試試其他關鍵字或切換分類篩選。</p></div>
       </section>
-      <footer class="footer"><span>讓計畫清晰，讓生活從容。</span><span class="storage-note"><i></i>資料儲存在此裝置</span></footer>
+      <footer class="footer"><span>讓計畫清晰，讓生活從容。</span><span class="storage-note"><i></i>登入後同步至 Firebase Cloud Firestore</span></footer>
     </main>
   </div>
 

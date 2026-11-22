@@ -10,28 +10,64 @@ const firebaseConfig = {
 
 (() => {
   const CATEGORIES = ['工作', '個人', '健康', '學習', '家庭', '其他'];
-  const STORAGE_KEY = 'daily-order-planner-v1';
   const $ = (id) => document.getElementById(id);
   const localDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
-  const shiftDate = (days) => { const d = new Date(); d.setDate(d.getDate()+days); return localDate(d); };
-  const defaults = [
-    {id:'sample-1',title:'每週產品進度會議',type:'event',category:'工作',date:shiftDate(0),start:'10:00',end:'11:00',allDay:false,location:'線上會議室',notes:'整理本週進度與待辦事項',completed:false},
-    {id:'sample-2',title:'完成設計提案初稿',type:'task',category:'工作',date:shiftDate(1),start:'',end:'',allDay:true,location:'',notes:'完成後分享給團隊確認',completed:false},
-    {id:'sample-3',title:'下班後瑜伽課',type:'event',category:'健康',date:shiftDate(2),start:'18:30',end:'19:30',allDay:false,location:'日光瑜伽教室',notes:'記得帶水壺與毛巾',completed:false}
-  ];
-  let items;
-  try { const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); items = Array.isArray(saved) ? saved : defaults; } catch { items = defaults; }
+  let items = [];
   let activeCategory = '全部';
   let toastTimer;
   let firebaseAuth = null;
   let googleProvider = null;
   let signInWithPopup = null;
   let signOut = null;
+  let db = null;
+  let firestoreSdk = null;
+  let activeUserId = null;
+  let unsubscribeEvents = null;
+  let eventsLoading = false;
+  let eventsLoadError = '';
 
   const dateLabel = (iso, options) => new Intl.DateTimeFormat('zh-TW', options).format(new Date(`${iso}T12:00:00`));
   const escapeHtml = (value='') => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   const toast = (message) => { const el=$('toast'); el.textContent=message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),4200); };
+
+  function firestoreErrorMessage(error) {
+    if(error?.code==='permission-denied') return '資料庫拒絕存取，請確認 Firestore 安全性規則允許登入者讀寫自己的資料。';
+    if(error?.code==='unavailable'||error?.code==='network-request-failed') return '目前無法連線至雲端資料庫，請檢查網路後再試。';
+    if(error?.code==='unauthenticated') return '登入狀態已失效，請重新登入 Google 帳號。';
+    return `雲端資料操作失敗${error?.message?`：${error.message}`:'，請稍後再試。'}`;
+  }
+
+  function toDate(value) {
+    if(value?.toDate) return value.toDate();
+    if(value instanceof Date) return value;
+    return new Date(value);
+  }
+
+  function toInputTime(value) {
+    if(!value) return '';
+    const date=toDate(value);
+    return Number.isNaN(date.getTime())?'':`${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+  }
+
+  function toViewItem(id, data) {
+    const startDate=toDate(data.startAt);
+    const endDate=toDate(data.endAt);
+    return {
+      id, title:data.title||'', type:data.type==='task'?'task':'event', category:data.category||'其他',
+      date:Number.isNaN(startDate.getTime())?localDate():localDate(startDate),
+      start:data.allDay?'':toInputTime(data.startAt), end:data.allDay?'':toInputTime(data.endAt),
+      allDay:!!data.allDay, location:data.location||'', notes:data.description||'', completed:!!data.completed
+    };
+  }
+
+  function fromFormValues(type, date, start, end, allDay) {
+    const startValue=type==='task'||allDay?'00:00':(start||'00:00');
+    const endValue=type==='task'||allDay?'00:00':(end||startValue);
+    return {
+      startAt:new Date(`${date}T${startValue}:00`).toISOString(),
+      endAt:new Date(`${date}T${endValue}:00`).toISOString()
+    };
+  }
 
   function setSignInLoading(loading) {
     const button=$('googleLogin');
@@ -42,6 +78,7 @@ const firebaseConfig = {
 
   function showAuthUser(user) {
     const profile=$('userProfile'), login=$('googleLogin'), avatar=$('userAvatar'), initial=$('userInitial');
+    $('addEventBtn').disabled=!user;
     if(!user) {
       profile.hidden=true; login.hidden=false; avatar.hidden=true; avatar.removeAttribute('src'); avatar.alt='';
       initial.textContent='訪'; initial.hidden=false; $('userName').textContent=''; return;
@@ -76,15 +113,31 @@ const firebaseConfig = {
     }
     try {
       const version='13.4.0';
-      const [appSdk,authSdk]=await Promise.all([
+      const [appSdk,authSdk,firestore]=await Promise.all([
         import(`https://www.gstatic.com/firebasejs/${version}/firebase-app.js`),
-        import(`https://www.gstatic.com/firebasejs/${version}/firebase-auth.js`)
+        import(`https://www.gstatic.com/firebasejs/${version}/firebase-auth.js`),
+        import(`https://www.gstatic.com/firebasejs/${version}/firebase-firestore.js`)
       ]);
       const firebaseApp=appSdk.initializeApp(firebaseConfig);
       firebaseAuth=authSdk.getAuth(firebaseApp);
+      firestoreSdk=firestore;
+      db=firestore.getFirestore(firebaseApp);
       googleProvider=new authSdk.GoogleAuthProvider();
       signInWithPopup=authSdk.signInWithPopup; signOut=authSdk.signOut;
-      authSdk.onAuthStateChanged(firebaseAuth,user=>{showAuthUser(user);setSignInLoading(false);},error=>{showAuthUser(null);setSignInLoading(false);toast(`無法取得登入狀態：${error.message||'請重新整理頁面。'}`);});
+      authSdk.onAuthStateChanged(firebaseAuth,user=>{
+        showAuthUser(user);
+        activeUserId=user?.uid||null;
+        if(unsubscribeEvents){unsubscribeEvents();unsubscribeEvents=null;}
+        if(!activeUserId){items=[];eventsLoading=false;eventsLoadError='';$('cloudPrompt').hidden=false;$('cloudLoading').hidden=true;$('cloudError').hidden=true;render();setSignInLoading(false);return;}
+        items=[];eventsLoading=true;eventsLoadError='';$('cloudPrompt').hidden=true;$('cloudLoading').hidden=false;$('cloudError').hidden=true;render();setSignInLoading(false);
+        const userEvents=firestore.collection(db,'users',activeUserId,'events');
+        unsubscribeEvents=firestore.onSnapshot(userEvents,snapshot=>{
+          items=snapshot.docs.map(entry=>toViewItem(entry.id,entry.data()));
+          eventsLoading=false;eventsLoadError='';$('cloudLoading').hidden=true;$('cloudError').hidden=true;render();
+        },error=>{
+          items=[];eventsLoading=false;eventsLoadError=firestoreErrorMessage(error);$('cloudLoading').hidden=true;$('cloudError').hidden=false;$('cloudErrorMessage').textContent=eventsLoadError;render();toast(eventsLoadError);
+        });
+      },error=>{showAuthUser(null);activeUserId=null;items=[];setSignInLoading(false);toast(`無法取得登入狀態：${error.message||'請重新整理頁面。'}`);render();});
     } catch(error) {
       showAuthUser(null); setSignInLoading(false);
       toast(`Firebase 初始化失敗：${error.message||'請檢查網路連線與設定。'}`);
@@ -109,9 +162,13 @@ const firebaseConfig = {
     const query=$('searchInput').value.trim().toLocaleLowerCase();
     const filtered=items.filter(x=>(activeCategory==='全部'||x.category===activeCategory)&&(!query||[x.title,x.location,x.notes,x.category].some(v=>(v||'').toLocaleLowerCase().includes(query)))).sort((a,b)=>a.date.localeCompare(b.date)||(a.start||'').localeCompare(b.start||''));
     $('resultCount').textContent=`${filtered.length} 筆安排`;
-    $('emptyState').hidden=filtered.length>0;
+    const signedIn=!!activeUserId;
+    $('cloudPrompt').hidden=signedIn;
+    $('cloudLoading').hidden=!signedIn||!eventsLoading;
+    $('cloudError').hidden=!signedIn||!eventsLoadError;
+    $('emptyState').hidden=!signedIn||eventsLoading||!!eventsLoadError||filtered.length>0;
     $('scheduleList').innerHTML=filtered.map((x,index)=>{
-      const time=x.allDay?'全天':(x.start&&x.end?`${x.start} – ${x.end}`:x.start||x.end||'未設定時間');
+      const time=x.type==='task'?'待完成':x.allDay?'全天':(x.start&&x.end?`${x.start} – ${x.end}`:x.start||x.end||'未設定時間');
       const day=new Date(`${x.date}T12:00:00`).getDay();
       return `<article class="schedule-item ${x.completed?'completed':''}" style="animation-delay:${Math.min(index*35,180)}ms">
         <div class="date-tile"><span class="month">${dateLabel(x.date,{month:'short'})}</span><span class="day">${dateLabel(x.date,{day:'2-digit'})}</span><span class="weekday">${['週日','週一','週二','週三','週四','週五','週六'][day]}</span></div>
@@ -154,19 +211,43 @@ const firebaseConfig = {
   $('typeInput').addEventListener('change',e=>setType(e.target.value));
   document.querySelectorAll('.close-dialog').forEach(btn=>btn.addEventListener('click',()=>{ $('eventDialog').close(); $('eventForm').querySelectorAll('input:not([type=hidden]),select,textarea').forEach(el=>el.disabled=false); $('eventForm').querySelector('[type=submit]').hidden=false; }));
   $('eventDialog').addEventListener('close',()=>{ $('eventForm').querySelectorAll('input:not([type=hidden]),select,textarea').forEach(el=>el.disabled=false); $('eventForm').querySelector('[type=submit]').hidden=false; });
-  $('eventForm').addEventListener('submit',e=>{
-    e.preventDefault(); const id=$('eventId').value, type=$('typeInput').value, old=items.find(x=>x.id===id);
-    const data={id:id||`item-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,title:$('titleInput').value.trim(),type,category:$('categoryInput').value,date:$('dateInput').value,start:type==='task'||$('allDayInput').checked?'':$('startInput').value,end:type==='task'||$('allDayInput').checked?'':$('endInput').value,allDay:type==='task'?false:$('allDayInput').checked,location:$('locationInput').value.trim(),notes:$('notesInput').value.trim(),completed:old?.completed||false};
-    if(data.start&&data.end&&data.end<data.start){$('endInput').setCustomValidity('結束時間需晚於開始時間');$('endInput').reportValidity();$('endInput').setCustomValidity('');return;}
-    if(id)items=items.map(x=>x.id===id?data:x);else items.push(data);
-    save(); $('eventDialog').close(); render(); toast(id?'已更新安排':'已新增安排');
+  $('eventForm').addEventListener('submit',async e=>{
+    e.preventDefault();
+    if(!activeUserId||!db||!firestoreSdk){toast('請先登入 Google 帳號以管理雲端行程。');return;}
+    const id=$('eventId').value, type=$('typeInput').value, old=items.find(x=>x.id===id);
+    const date=$('dateInput').value, allDay=type==='event'&&$('allDayInput').checked;
+    const start=allDay||type==='task'?'':$('startInput').value;
+    const end=allDay||type==='task'?'':$('endInput').value;
+    if(start&&end&&end<start){$('endInput').setCustomValidity('結束時間需晚於開始時間');$('endInput').reportValidity();$('endInput').setCustomValidity('');return;}
+    const times=fromFormValues(type,date,start,end,allDay);
+    const data={
+      title:$('titleInput').value.trim(),type,category:$('categoryInput').value,
+      startAt:times.startAt,endAt:times.endAt,allDay,location:$('locationInput').value.trim(),
+      description:$('notesInput').value.trim(),completed:old?.completed||false,ownerId:activeUserId,
+      updatedAt:firestoreSdk.serverTimestamp()
+    };
+    const submit=$('eventForm').querySelector('[type=submit]'); submit.disabled=true;
+    try {
+      if(id) await firestoreSdk.updateDoc(firestoreSdk.doc(db,'users',activeUserId,'events',id),data);
+      else await firestoreSdk.addDoc(firestoreSdk.collection(db,'users',activeUserId,'events'),{...data,createdAt:firestoreSdk.serverTimestamp()});
+      $('eventDialog').close();toast(id?'已更新雲端行程':'已新增雲端行程');
+    } catch(error) { toast(firestoreErrorMessage(error)); }
+    finally { submit.disabled=false; }
   });
   initializeFirebaseAuth();
-  $('scheduleList').addEventListener('click',e=>{
+  $('scheduleList').addEventListener('click',async e=>{
     const btn=e.target.closest('[data-action]'); if(!btn)return; const item=items.find(x=>x.id===btn.dataset.id); if(!item)return;
     if(btn.dataset.action==='view')openForm(item,true);
     if(btn.dataset.action==='edit')openForm(item);
-    if(btn.dataset.action==='toggle'){item.completed=!item.completed;save();render();toast(item.completed?'任務已完成':'已取消完成標記');}
-    if(btn.dataset.action==='delete'){items=items.filter(x=>x.id!==item.id);save();render();toast('已刪除安排');}
+    if(btn.dataset.action==='toggle'){
+      if(!activeUserId)return;
+      try { await firestoreSdk.updateDoc(firestoreSdk.doc(db,'users',activeUserId,'events',item.id),{completed:!item.completed,updatedAt:firestoreSdk.serverTimestamp()});toast(item.completed?'已取消完成標記':'任務已完成'); }
+      catch(error) { toast(firestoreErrorMessage(error)); }
+    }
+    if(btn.dataset.action==='delete'){
+      if(!activeUserId)return;
+      try { await firestoreSdk.deleteDoc(firestoreSdk.doc(db,'users',activeUserId,'events',item.id));toast('已刪除雲端行程'); }
+      catch(error) { toast(firestoreErrorMessage(error)); }
+    }
   });
 })();
