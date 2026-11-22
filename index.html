@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f7fb">
   <title>日序｜個人行程與任務管理</title>
   <link rel="stylesheet" href="./style.css">
-  <script src="./app.js" defer></script>
+  <script type="module" src="./app.js"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -18,7 +18,7 @@
       <div class="topbar-right">
         <div class="today-label"><span class="live-dot"></span><span id="todayLabel">今天</span></div>
         <button class="google-btn" id="googleLogin" type="button"><span class="google-g">G</span><span>Google 登入</span></button>
-        <div class="profile"><span class="avatar">林</span><span class="profile-name">訪客使用者</span><span class="chevron">⌄</span></div>
+        <div class="profile" id="userProfile" hidden><img class="avatar" id="userAvatar" alt="" hidden><span class="avatar" id="userInitial">訪</span><span class="profile-name" id="userName"></span><button class="signout-btn" id="signOutBtn" type="button">登出</button></div>
       </div>
     </header>
 

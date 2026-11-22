@@ -1,3 +1,13 @@
+const firebaseConfig = {
+  apiKey: "AIzaSyBJSVc9i_IVgjGZ878x5sv4kTmfx2UHeL0",
+  authDomain: "projecta-bb75e.firebaseapp.com",
+  projectId: "projecta-bb75e",
+  storageBucket: "projecta-bb75e.firebasestorage.app",
+  messagingSenderId: "516145080643",
+  appId: "1:516145080643:web:128d10e34843c308c6a7f6",
+  measurementId: "G-X9HTX92DWP"
+};
+
 (() => {
   const CATEGORIES = ['工作', '個人', '健康', '學習', '家庭', '其他'];
   const STORAGE_KEY = 'daily-order-planner-v1';
@@ -13,11 +23,73 @@
   try { const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); items = Array.isArray(saved) ? saved : defaults; } catch { items = defaults; }
   let activeCategory = '全部';
   let toastTimer;
+  let firebaseAuth = null;
+  let googleProvider = null;
+  let signInWithPopup = null;
+  let signOut = null;
 
   const dateLabel = (iso, options) => new Intl.DateTimeFormat('zh-TW', options).format(new Date(`${iso}T12:00:00`));
   const escapeHtml = (value='') => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-  const toast = (message) => { const el=$('toast'); el.textContent=message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),2200); };
+  const toast = (message) => { const el=$('toast'); el.textContent=message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),4200); };
+
+  function setSignInLoading(loading) {
+    const button=$('googleLogin');
+    button.disabled=loading;
+    button.classList.toggle('is-loading',loading);
+    button.innerHTML=loading?'<span class="loading-spinner" aria-hidden="true"></span><span>登入中…</span>':'<span class="google-g" aria-hidden="true">G</span><span>Google 登入</span>';
+  }
+
+  function showAuthUser(user) {
+    const profile=$('userProfile'), login=$('googleLogin'), avatar=$('userAvatar'), initial=$('userInitial');
+    if(!user) {
+      profile.hidden=true; login.hidden=false; avatar.hidden=true; avatar.removeAttribute('src'); avatar.alt='';
+      initial.textContent='訪'; initial.hidden=false; $('userName').textContent=''; return;
+    }
+    login.hidden=true; profile.hidden=false;
+    const name=user.displayName||user.email||'Google 使用者';
+    $('userName').textContent=name;
+    initial.textContent=Array.from(name.trim())[0]||'使';
+    if(user.photoURL) {
+      avatar.onerror=()=>{avatar.hidden=true;avatar.removeAttribute('src');initial.hidden=false;};
+      avatar.src=user.photoURL; avatar.alt=`${name} 的頭像`; avatar.hidden=false; initial.hidden=true;
+    }
+    else { avatar.hidden=true; avatar.removeAttribute('src'); initial.hidden=false; }
+  }
+
+  function authErrorMessage(error) {
+    if(error?.code==='auth/popup-closed-by-user') return '你已取消 Google 登入。';
+    if(error?.code==='auth/popup-blocked') return '瀏覽器封鎖了登入彈窗，請允許此網站開啟彈窗後再試。';
+    if(error?.code==='auth/cancelled-popup-request') return '登入視窗已被另一個登入要求取代，請再試一次。';
+    if(error?.code==='auth/unauthorized-domain') return '此網域尚未加入 Firebase 授權網域，請至 Firebase Authentication 設定新增目前網站網域。';
+    if(error?.code==='auth/operation-not-allowed') return 'Firebase 尚未啟用 Google 登入提供者。';
+    return `登入失敗${error?.message?`：${error.message}`:'，請稍後再試。'}`;
+  }
+
+  async function initializeFirebaseAuth() {
+    setSignInLoading(true);
+    const required=['apiKey','authDomain','projectId','appId'];
+    if(required.some(key=>!firebaseConfig[key]||String(firebaseConfig[key]).includes('YOUR_'))) {
+      setSignInLoading(false);
+      $('googleLogin').title='請先設定 Firebase firebaseConfig';
+      return;
+    }
+    try {
+      const version='13.4.0';
+      const [appSdk,authSdk]=await Promise.all([
+        import(`https://www.gstatic.com/firebasejs/${version}/firebase-app.js`),
+        import(`https://www.gstatic.com/firebasejs/${version}/firebase-auth.js`)
+      ]);
+      const firebaseApp=appSdk.initializeApp(firebaseConfig);
+      firebaseAuth=authSdk.getAuth(firebaseApp);
+      googleProvider=new authSdk.GoogleAuthProvider();
+      signInWithPopup=authSdk.signInWithPopup; signOut=authSdk.signOut;
+      authSdk.onAuthStateChanged(firebaseAuth,user=>{showAuthUser(user);setSignInLoading(false);},error=>{showAuthUser(null);setSignInLoading(false);toast(`無法取得登入狀態：${error.message||'請重新整理頁面。'}`);});
+    } catch(error) {
+      showAuthUser(null); setSignInLoading(false);
+      toast(`Firebase 初始化失敗：${error.message||'請檢查網路連線與設定。'}`);
+    }
+  }
 
   function renderFilters() {
     $('filterList').innerHTML = ['全部',...CATEGORIES].map(cat=>`<button type="button" class="filter-chip ${activeCategory===cat?'active':''}" data-filter="${cat}" aria-pressed="${activeCategory===cat}">${cat}</button>`).join('');
@@ -64,7 +136,19 @@
   $('categoryInput').innerHTML=CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join('');
   render();
   $('addEventBtn').addEventListener('click',()=>openForm());
-  $('googleLogin').addEventListener('click',()=>toast('Google 登入將於下一階段開放'));
+  $('googleLogin').addEventListener('click',async()=>{
+    if(!firebaseAuth||!googleProvider||!signInWithPopup){toast('Firebase 設定尚未完成，請先填入 Firebase firebaseConfig。');return;}
+    setSignInLoading(true);
+    try { await signInWithPopup(firebaseAuth,googleProvider); }
+    catch(error) { setSignInLoading(false); toast(authErrorMessage(error)); }
+  });
+  $('signOutBtn').addEventListener('click',async()=>{
+    if(!firebaseAuth||!signOut)return;
+    $('signOutBtn').disabled=true;
+    try { await signOut(firebaseAuth); }
+    catch(error) { toast(`登出失敗：${error.message||'請稍後再試。'}`); }
+    finally { $('signOutBtn').disabled=false; }
+  });
   $('searchInput').addEventListener('input',render);
   $('filterList').addEventListener('click',e=>{const btn=e.target.closest('[data-filter]');if(btn){activeCategory=btn.dataset.filter;render();}});
   $('typeInput').addEventListener('change',e=>setType(e.target.value));
@@ -77,6 +161,7 @@
     if(id)items=items.map(x=>x.id===id?data:x);else items.push(data);
     save(); $('eventDialog').close(); render(); toast(id?'已更新安排':'已新增安排');
   });
+  initializeFirebaseAuth();
   $('scheduleList').addEventListener('click',e=>{
     const btn=e.target.closest('[data-action]'); if(!btn)return; const item=items.find(x=>x.id===btn.dataset.id); if(!item)return;
     if(btn.dataset.action==='view')openForm(item,true);
