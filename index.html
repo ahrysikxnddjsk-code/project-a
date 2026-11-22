@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>日序｜個人行程與任務管理</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="日序首頁">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="14" rx="3"/><path d="M8 4v4m8-4v4M4 10h16m-11 4h3m-3 3h6"/></svg></span>
+        <span><strong>日序</strong><small>個人行程與任務管理</small></span>
+      </a>
+      <div class="topbar-right">
+        <div class="today-label"><span class="live-dot"></span><span id="todayLabel">今天</span></div>
+        <button class="google-btn" id="googleLogin" type="button"><span class="google-g">G</span><span>Google 登入</span></button>
+        <div class="profile"><span class="avatar">林</span><span class="profile-name">訪客使用者</span><span class="chevron">⌄</span></div>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <section class="welcome-row">
+        <div><p class="eyebrow">PERSONAL PLANNER</p><h1>把每一天，安排得剛剛好。</h1><p class="welcome-copy">掌握接下來的行程，從容完成每一件重要的小事。</p></div>
+        <button class="primary-btn" id="addEventBtn" type="button"><span class="plus">＋</span>新增行程</button>
+      </section>
+
+      <section class="stats-grid" aria-label="行程統計">
+        <article class="stat-card"><div class="stat-top"><span class="stat-icon purple">▦</span><span class="stat-caption">本月行程</span></div><div class="stat-bottom"><strong id="monthCount">0</strong><span>筆安排</span></div><span class="stat-decoration purple-bg"></span></article>
+        <article class="stat-card"><div class="stat-top"><span class="stat-icon blue">◷</span><span class="stat-caption">本週安排</span></div><div class="stat-bottom"><strong id="weekCount">0</strong><span>筆安排</span></div><span class="stat-decoration blue-bg"></span></article>
+        <article class="stat-card"><div class="stat-top"><span class="stat-icon orange">☼</span><span class="stat-caption">今日行程</span></div><div class="stat-bottom"><strong id="todayCount">0</strong><span>筆安排</span></div><span class="stat-decoration orange-bg"></span></article>
+        <article class="stat-card completion-card"><div class="stat-top"><span class="stat-icon green">✓</span><span class="stat-caption">任務完成率</span></div><div class="stat-bottom"><strong id="completionRate">0%</strong><span id="taskSummary">0 / 0 項任務</span></div><div class="progress-track"><span id="completionProgress"></span></div></article>
+      </section>
+
+      <section class="planner-panel">
+        <div class="panel-heading"><div><p class="eyebrow">YOUR SCHEDULE</p><h2>行程與任務</h2></div><span class="result-count" id="resultCount">0 筆安排</span></div>
+        <div class="toolbar"><label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.2 4.2"/></svg><input type="search" id="searchInput" placeholder="搜尋行程、地點或備註…" aria-label="搜尋行程"></label><div class="filter-wrap"><span class="filter-label">分類</span><div class="filter-list" id="filterList" role="group" aria-label="依分類篩選"></div></div></div>
+        <div class="schedule-list" id="scheduleList"></div>
+        <div class="empty-state" id="emptyState" hidden><span class="empty-icon">⌕</span><strong>沒有找到符合的安排</strong><p>試試其他關鍵字或切換分類篩選。</p></div>
+      </section>
+      <footer class="footer"><span>讓計畫清晰，讓生活從容。</span><span class="storage-note"><i></i>資料儲存在此裝置</span></footer>
+    </main>
+  </div>
+
+  <dialog class="event-dialog" id="eventDialog" aria-labelledby="dialogTitle">
+    <form id="eventForm">
+      <div class="dialog-head"><div><p class="eyebrow">MAKE IT HAPPEN</p><h2 id="dialogTitle">新增安排</h2></div><button class="icon-button close-dialog" type="button" aria-label="關閉">×</button></div>
+      <input type="hidden" id="eventId">
+      <div class="form-grid">
+        <label class="field full"><span>標題 <b>*</b></span><input id="titleInput" name="title" required maxlength="80" placeholder="例如：每週專案會議"></label>
+        <label class="field"><span>類型</span><select id="typeInput" name="type"><option value="event">行程</option><option value="task">任務</option></select></label>
+        <label class="field"><span>分類</span><select id="categoryInput" name="category"></select></label>
+        <label class="field"><span>日期 <b>*</b></span><input id="dateInput" name="date" type="date" required></label>
+        <div class="field time-fields" id="timeFields"><label><span>開始時間</span><input id="startInput" name="start" type="time"></label><span class="time-separator">至</span><label><span>結束時間</span><input id="endInput" name="end" type="time"></label></div>
+        <label class="check-field full" id="allDayWrap"><input id="allDayInput" type="checkbox"><span class="custom-check"></span><span>全天行程</span></label>
+        <label class="field full"><span>地點</span><input id="locationInput" name="location" maxlength="100" placeholder="新增地點（選填）"></label>
+        <label class="field full"><span>備註</span><textarea id="notesInput" name="notes" rows="3" maxlength="500" placeholder="記下其他需要留意的事項…"></textarea></label>
+      </div>
+      <div class="dialog-actions"><button class="secondary-btn close-dialog" type="button">取消</button><button class="primary-btn" type="submit">儲存安排</button></div>
+    </form>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
